@@ -64,34 +64,60 @@
         }
         
         .upload-zone {
-            padding: 60px 40px;
+            padding: 40px;
             text-align: center;
+        }
+        
+        .upload-box {
             border: 3px dashed #667eea;
-            margin: 40px;
+            padding: 30px;
             border-radius: 12px;
             cursor: pointer;
             transition: all 0.3s;
+            margin-bottom: 15px;
         }
         
-        .upload-zone:hover {
+        .upload-box:hover {
             background: #f7f9ff;
             border-color: #764ba2;
         }
         
-        .upload-zone h2 {
+        .upload-box h3 {
             color: #667eea;
-            margin-bottom: 10px;
+            margin-bottom: 8px;
+            font-size: 16px;
+        }
+        
+        .upload-box p {
+            color: #666;
+            font-size: 14px;
+        }
+        
+        .file-status {
+            padding: 12px;
+            background: #e8f5e9;
+            border-radius: 8px;
+            margin-top: 10px;
+            color: #2e7d32;
+            font-size: 14px;
         }
         
         .content {
             padding: 30px;
         }
         
-        .question-title {
-            font-size: 20px;
+        .question-header {
+            font-size: 18px;
             font-weight: bold;
-            margin-bottom: 20px;
+            margin-bottom: 15px;
             color: #333;
+        }
+        
+        .question-text {
+            font-size: 16px;
+            margin-bottom: 20px;
+            color: #555;
+            line-height: 1.5;
         }
         
         .option {
@@ -272,6 +298,10 @@
         .hidden {
             display: none;
         }
+
+        .start-button {
+            margin-top: 20px;
+        }
     </style>
 </head>
 <body>
@@ -282,17 +312,31 @@
                     <h1>QCM Médical</h1>
                     <p>Entraînement interactif</p>
                 </div>
-                <div class="upload-zone" onclick="document.getElementById('fileInput').click()">
-                    <h2>📤 Importer un fichier</h2>
-                    <p>Cliquez pour sélectionner un fichier .txt</p>
-                    <input type="file" id="fileInput" accept=".txt" style="display:none">
+                <div class="upload-zone">
+                    <div class="upload-box" onclick="document.getElementById('questionsFile').click()">
+                        <h3>📄 Fichier des Questions (ENONCE)</h3>
+                        <p>Cliquez pour sélectionner</p>
+                        <input type="file" id="questionsFile" accept=".txt" style="display:none">
+                    </div>
+                    <div id="questionsStatus" class="file-status hidden"></div>
+                    
+                    <div class="upload-box" onclick="document.getElementById('answersFile').click()">
+                        <h3>✅ Fichier des Réponses (CORRIGE)</h3>
+                        <p>Cliquez pour sélectionner</p>
+                        <input type="file" id="answersFile" accept=".txt" style="display:none">
+                    </div>
+                    <div id="answersStatus" class="file-status hidden"></div>
+
+                    <button id="startButton" class="button button-primary start-button hidden" onclick="startQuiz()">
+                        Commencer le QCM
+                    </button>
                 </div>
                 <div class="info-box" style="margin: 20px;">
                     <h3>Comment préparer vos fichiers :</h3>
                     <ol>
-                        <li>Ouvrez votre PDF dans Google Docs</li>
-                        <li>Téléchargez en format Texte (.txt)</li>
-                        <li>Importez le fichier ici</li>
+                        <li>Ouvrez vos PDFs dans Google Docs</li>
+                        <li>Téléchargez chacun en format Texte (.txt)</li>
+                        <li>Importez les deux fichiers ici</li>
                     </ol>
                 </div>
             </div>
@@ -309,7 +353,8 @@
                 </div>
                 
                 <div class="content">
-                    <div class="question-title" id="questionTitle"></div>
+                    <div class="question-header" id="questionHeader"></div>
+                    <div class="question-text" id="questionText"></div>
                     <div id="optionsContainer"></div>
                     <button id="actionButton" class="button button-primary" onclick="handleAction()">Valider</button>
                 </div>
@@ -339,6 +384,8 @@
     </div>
 
     <script>
+        let questionsData = null;
+        let answersData = null;
         let questions = [];
         let currentIndex = 0;
         let selectedAnswers = [];
@@ -347,47 +394,70 @@
         let timerInterval = null;
         let results = [];
 
-        function parseQCM(text) {
+        document.getElementById('questionsFile').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(event) {
+                questionsData = event.target.result;
+                document.getElementById('questionsStatus').textContent = '✓ Questions chargées: ' + file.name;
+                document.getElementById('questionsStatus').classList.remove('hidden');
+                checkBothFilesLoaded();
+            };
+            reader.readAsText(file);
+        });
+
+        document.getElementById('answersFile').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(event) {
+                answersData = event.target.result;
+                document.getElementById('answersStatus').textContent = '✓ Réponses chargées: ' + file.name;
+                document.getElementById('answersStatus').classList.remove('hidden');
+                checkBothFilesLoaded();
+            };
+            reader.readAsText(file);
+        });
+
+        function checkBothFilesLoaded() {
+            if (questionsData && answersData) {
+                document.getElementById('startButton').classList.remove('hidden');
+            }
+        }
+
+        function parseQuestions(text) {
             const questionBlocks = text.split(/Question\s+n?°?\s*\d+\s*:/i).filter(b => b.trim());
             const parsed = [];
 
             questionBlocks.forEach((block, idx) => {
                 const lines = block.split('\n').filter(l => l.trim());
+                
+                // Extract question text
+                let questionText = '';
+                const ennonceMatch = block.match(/Enoncé\s*:\s*(.+?)(?=\n\s*[a-e]\.|$)/is);
+                if (ennonceMatch) {
+                    questionText = ennonceMatch[1].trim();
+                }
+
+                // Extract options
                 const options = [];
-                let currentOption = null;
-
-                lines.forEach(line => {
-                    const optionMatch = line.match(/^([A-E])\.\s*(VRAI|FAUX|Vrai|Faux)/i);
-                    if (optionMatch) {
-                        if (currentOption) options.push(currentOption);
-                        currentOption = {
-                            letter: optionMatch[1],
-                            isCorrect: optionMatch[2].toUpperCase() === 'VRAI',
-                            explanation: line.substring(optionMatch[0].length).trim().replace(/^[.:]\s*/, '')
-                        };
-                    } else if (currentOption && line.trim()) {
-                        currentOption.explanation += ' ' + line.trim();
-                    }
-                });
-                if (currentOption) options.push(currentOption);
-
-                const singleAnswerMatch = block.match(/Réponse\s+VRAIE?\s*:\s*([A-E])/i);
-                if (singleAnswerMatch && options.length === 0) {
-                    ['A', 'B', 'C', 'D', 'E'].forEach(letter => {
-                        options.push({
-                            letter,
-                            isCorrect: letter === singleAnswerMatch[1],
-                            explanation: letter === singleAnswerMatch[1] 
-                                ? block.split('\n').slice(1).join(' ').trim()
-                                : ''
-                        });
+                const optionRegex = /([a-e])\.\s*(.+?)(?=\n\s*[a-e]\.|$)/gis;
+                let match;
+                while ((match = optionRegex.exec(block)) !== null) {
+                    options.push({
+                        letter: match[1].toLowerCase(),
+                        text: match[2].trim().replace(/\s+/g, ' ')
                     });
                 }
 
                 if (options.length > 0) {
                     parsed.push({
                         number: idx + 1,
-                        options
+                        text: questionText,
+                        options: options
                     });
                 }
             });
@@ -395,23 +465,90 @@
             return parsed;
         }
 
-        document.getElementById('fileInput').addEventListener('change', function(e) {
-            const file = e.target.files[0];
-            if (!file) return;
+        function parseAnswers(text) {
+            const questionBlocks = text.split(/Question\s+n?°?\s*\d+\s*:/i).filter(b => b.trim());
+            const parsed = [];
 
-            const reader = new FileReader();
-            reader.onload = function(event) {
-                questions = parseQCM(event.target.result);
-                if (questions.length > 0) {
-                    startQuiz();
-                } else {
-                    alert('Aucune question trouvée dans le fichier');
+            questionBlocks.forEach((block, idx) => {
+                const lines = block.split('\n').filter(l => l.trim());
+                const answers = [];
+                let currentAnswer = null;
+
+                lines.forEach(line => {
+                    const optionMatch = line.match(/^([A-E])\.\s*(VRAI|FAUX|Vrai|Faux)/i);
+                    if (optionMatch) {
+                        if (currentAnswer) answers.push(currentAnswer);
+                        currentAnswer = {
+                            letter: optionMatch[1].toLowerCase(),
+                            isCorrect: optionMatch[2].toUpperCase() === 'VRAI',
+                            explanation: line.substring(optionMatch[0].length).trim().replace(/^[.:]\s*/, '')
+                        };
+                    } else if (currentAnswer && line.trim()) {
+                        currentAnswer.explanation += ' ' + line.trim();
+                    }
+                });
+                if (currentAnswer) answers.push(currentAnswer);
+
+                // Handle single answer format
+                const singleAnswerMatch = block.match(/Réponse\s+VRAIE?\s*:\s*([A-E])/i);
+                if (singleAnswerMatch && answers.length === 0) {
+                    ['a', 'b', 'c', 'd', 'e'].forEach(letter => {
+                        answers.push({
+                            letter: letter,
+                            isCorrect: letter === singleAnswerMatch[1].toLowerCase(),
+                            explanation: letter === singleAnswerMatch[1].toLowerCase()
+                                ? block.split('\n').slice(1).join(' ').trim()
+                                : ''
+                        });
+                    });
                 }
-            };
-            reader.readAsText(file);
-        });
+
+                parsed.push({
+                    number: idx + 1,
+                    answers: answers
+                });
+            });
+
+            return parsed;
+        }
+
+        function mergeQuestionsAndAnswers(questionsArr, answersArr) {
+            const merged = [];
+            
+            for (let i = 0; i < Math.min(questionsArr.length, answersArr.length); i++) {
+                const q = questionsArr[i];
+                const a = answersArr[i];
+                
+                const options = q.options.map(opt => {
+                    const answerData = a.answers.find(ans => ans.letter === opt.letter);
+                    return {
+                        letter: opt.letter.toUpperCase(),
+                        text: opt.text,
+                        isCorrect: answerData ? answerData.isCorrect : false,
+                        explanation: answerData ? answerData.explanation : ''
+                    };
+                });
+
+                merged.push({
+                    number: q.number,
+                    text: q.text,
+                    options: options
+                });
+            }
+
+            return merged;
+        }
 
         function startQuiz() {
+            const questionsArr = parseQuestions(questionsData);
+            const answersArr = parseAnswers(answersData);
+            questions = mergeQuestionsAndAnswers(questionsArr, answersArr);
+
+            if (questions.length === 0) {
+                alert('Erreur lors du traitement des fichiers');
+                return;
+            }
+
             document.getElementById('uploadScreen').classList.add('hidden');
             document.getElementById('quizScreen').classList.remove('hidden');
             currentIndex = 0;
@@ -440,7 +577,8 @@
 
         function displayQuestion() {
             const q = questions[currentIndex];
-            document.getElementById('questionTitle').textContent = `Question ${q.number}`;
+            document.getElementById('questionHeader').textContent = `Question ${q.number}`;
+            document.getElementById('questionText').textContent = q.text;
             document.getElementById('questionCounter').textContent = `Question ${currentIndex + 1} / ${questions.length}`;
             
             const progress = ((currentIndex + 1) / questions.length) * 100;
@@ -455,7 +593,7 @@
                 div.innerHTML = `
                     <div class="checkbox"></div>
                     <div style="flex: 1;">
-                        <strong>${opt.letter}.</strong>
+                        <div><strong>${opt.letter}.</strong> ${opt.text}</div>
                         <div class="explanation hidden" id="exp-${opt.letter}"></div>
                     </div>
                 `;
@@ -560,8 +698,14 @@
         function reset() {
             document.getElementById('summaryScreen').classList.add('hidden');
             document.getElementById('uploadScreen').classList.remove('hidden');
+            questionsData = null;
+            answersData = null;
             questions = [];
-            document.getElementById('fileInput').value = '';
+            document.getElementById('questionsFile').value = '';
+            document.getElementById('answersFile').value = '';
+            document.getElementById('questionsStatus').classList.add('hidden');
+            document.getElementById('answersStatus').classList.add('hidden');
+            document.getElementById('startButton').classList.add('hidden');
         }
     </script>
 </body>
