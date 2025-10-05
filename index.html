@@ -429,10 +429,17 @@
         }
 
         function parseQuestions(text) {
-            const questionBlocks = text.split(/Question\s+n?°?\s*\d+\s*:/i).filter(b => b.trim());
+            // Split and get actual question numbers
+            const splits = text.split(/Question\s+n?°?\s*(\d+)\s*:/i);
             const parsed = [];
 
-            questionBlocks.forEach((block, idx) => {
+            // splits[0] is header, then pairs of (number, content)
+            for (let i = 1; i < splits.length; i += 2) {
+                const questionNum = parseInt(splits[i]);
+                const block = splits[i + 1];
+                
+                if (!block || !block.trim()) continue;
+
                 const lines = block.split('\n').filter(l => l.trim());
                 
                 // Extract question text
@@ -455,12 +462,12 @@
 
                 if (options.length > 0) {
                     parsed.push({
-                        number: idx + 1,
+                        number: questionNum,
                         text: questionText,
                         options: options
                     });
                 }
-            });
+            }
 
             return parsed;
         }
